@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบสแกนสั่งอาหาร</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9; }
+        .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .btn { background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; }
+        .status { font-weight: bold; color: #d9534f; }
+    </style>
+</head>
+<body>
+    <h1>🍽️ เมนูอาหาร (โต๊ะ <span id="table-no">1</span>)</h1>
+    
+    <div class="card">
+        <h3>ข้าวผัดกะเพราไข่ดาว</h3>
+        <p>ราคา: 50 บาท</p>
+        <button class="btn" onclick="order('ข้าวผัดกะเพราไข่ดาว')">สั่งเมนูนี้</button>
+    </div>
+
+    <div class="card">
+        <h3>สถานะออร์เดอร์ล่าสุด</h3>
+        <p id="order-info">ยังไม่มีการสั่งซื้อ</p>
+        <p>สถานะ: <span id="order-status" class="status">-</span></p>
+    </div>
+
+    <script>
+        function order(menu) {
+            document.getElementById('order-info').innerText = 'สั่ง: ' + menu;
+            document.getElementById('order-status').innerText = 'กำลังทำอาหาร...';
+            
+            // จำลองการเปลี่ยนสถานะเรียลไทม์หลังสั่ง 5 วินาที
+            setTimeout(() => {
+                document.getElementById('order-status').innerText = 'เสร็จเรียบร้อย! พร้อมเสิร์ฟ';
+                document.getElementById('order-status').style.color = '#28a745';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
