@@ -3,40 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบสแกนสั่งอาหาร</title>
+    <title>ระบบสั่งอาหารร้านเรา</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f9; }
-        .card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .btn { background: #28a745; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; }
-        .status { font-weight: bold; color: #d9534f; }
+        body { font-family: 'Prompt', sans-serif; background-color: #f8f9fa; margin: 0; padding: 20px; color: #333; }
+        h1 { text-align: center; color: #ff4757; }
+        .category-title { margin-top: 30px; font-size: 1.5rem; border-bottom: 2px solid #ff4757; padding-bottom: 5px; color: #2f3542; }
+        .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 15px; margin-top: 15px; }
+        .card { background: #fff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; justify-content: space-between; }
+        .card h3 { margin: 0 0 10px 0; font-size: 1.2rem; }
+        .card p { color: #57606f; font-weight: bold; margin: 0 0 15px 0; }
+        .btn { background-color: #ff4757; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-size: 1rem; transition: background 0.2s; }
+        .btn:hover { background-color: #ff6b81; }
     </style>
 </head>
 <body>
-    <h1>🍽️ เมนูอาหาร (โต๊ะ <span id="table-no">1</span>)</h1>
-    
-    <div class="card">
-        <h3>ข้าวผัดกะเพราไข่ดาว</h3>
-        <p>ราคา: 50 บาท</p>
-        <button class="btn" onclick="order('ข้าวผัดกะเพราไข่ดาว')">สั่งเมนูนี้</button>
-    </div>
 
-    <div class="card">
-        <h3>สถานะออร์เดอร์ล่าสุด</h3>
-        <p id="order-info">ยังไม่มีการสั่งซื้อ</p>
-        <p>สถานะ: <span id="order-status" class="status">-</span></p>
-    </div>
+    <h1>📋 เมนูอาหารทั้งหมด</h1>
+    <div id="menu-container">กำลังโหลดเมนู...</div>
 
     <script>
-        function order(menu) {
-            document.getElementById('order-info').innerText = 'สั่ง: ' + menu;
-            document.getElementById('order-status').innerText = 'กำลังทำอาหาร...';
-            
-            // จำลองการเปลี่ยนสถานะเรียลไทม์หลังสั่ง 5 วินาที
-            setTimeout(() => {
-                document.getElementById('order-status').innerText = 'เสร็จเรียบร้อย! พร้อมเสิร์ฟ';
-                document.getElementById('order-status').style.color = '#28a745';
-            }, 5000);
+        async function loadMenu() {
+            try {
+                const response = await fetch('/api/menu');
+                const items = await response.json();
+                
+                const container = document.getElementById('menu-container');
+                container.innerHTML = '';
+
+                if (items.error) {
+                    container.innerHTML = `<p style="color:red;">เกิดข้อผิดพลาด: ${items.error}</p>`;
+                    return;
+                }
+
+                // จัดกลุ่มเมนูตามหมวดหมู่
+                const categories = {};
+                items.forEach(item => {
+                    if (!categories[item.category]) {
+                        categories[item.category] = [];
+                    }
+                    categories[item.category].push(item);
+                });
+
+                // วนลูปแสดงผลทีละหมวดหมู่
+                for (const [catName, menuList] of Object.entries(categories)) {
+                    let section = document.createElement('div');
+                    section.innerHTML = `<div class="category-title">${catName}</div>`;
+                    
+                    let grid = document.createElement('div');
+                    grid.className = 'menu-grid';
+
+                    menuList.forEach(dish => {
+                        let card = document.createElement('div');
+                        card.className = 'card';
+                        card.innerHTML = `
+                            <div>
+                                <h3>${dish.name}</h3>
+                                <p>฿${dish.price}</p>
+                            </div>
+                            <button class="btn" onclick="orderItem('${dish.name}', ${dish.price})">เลือกเมนูนี้</button>
+                        `;
+                        grid.appendChild(card);
+                    });
+
+                    section.appendChild(grid);
+                    container.appendChild(section);
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById('menu-container').innerHTML = '<p style="color:red;">ไม่สามารถโหลดเมนูได้</p>';
+            }
         }
+
+        function orderItem(name, price) {
+            alert(`คุณเลือก: ${name} (${price} บาท)\n(ระบบสั่งซื้อกำลังพัฒนาต่อครับ!)`);
+        }
+
+        loadMenu();
     </script>
 </body>
 </html>
