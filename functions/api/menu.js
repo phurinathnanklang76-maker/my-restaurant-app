@@ -1,6 +1,5 @@
 export async function onRequest(context) {
   try {
-    // ดึงข้อมูลทั้งหมดจากตาราง menu ใน D1
     const { results } = await context.env.DB.prepare("SELECT * FROM menu").all();
     
     return new Response(JSON.stringify(results), {
