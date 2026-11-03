@@ -42,11 +42,8 @@
     const AlertCircle = Icons.AlertCircle || (() => <span>⚠️</span>);
     const RefreshCw = Icons.RefreshCw || (() => <span>🔄</span>);
 
-    // --- INITIAL MENU DATA ---
-    const INITIAL_CATEGORIES = [
-      "แฮมเบอร์เกอร์โฮมเมด", "ตอติญาโรล", "เพิ่มพิเศษ", "ของทอดทานเล่น", "พิซซ่าชีสยืดๆ", "สุดคุ้ม"
-    ];
-
+    // --- INITIAL DATA ---
+    const INITIAL_CATEGORIES = ["แฮมเบอร์เกอร์โฮมเมด", "ตอติญาโรล", "เพิ่มพิเศษ", "ของทอดทานเล่น", "พิซซ่าชีสยืดๆ", "สุดคุ้ม"];
     const INITIAL_MENU = [
       { id: 1, name: "เนื้อโคขุนแท้", price: 69, category: "แฮมเบอร์เกอร์โฮมเมด", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80" },
       { id: 2, name: "หมูเกรด A", price: 59, category: "แฮมเบอร์เกอร์โฮมเมด", image: "https://images.unsplash.com/photo-1572802419224-296b0aeee0d9?auto=format&fit=crop&w=500&q=80" },
@@ -102,6 +99,9 @@
       const [authMode, setAuthMode] = useState('login');
       const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
       const [authError, setAuthError] = useState('');
+
+      const [adminTab, setAdminTab] = useState('orders'); // 'orders' | 'menu'
+      const [newMenu, setNewMenu] = useState({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
 
       useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -159,6 +159,28 @@
           const newUser = { email: authForm.email, password: authForm.password, name: authForm.name };
           setUsers([...users, newUser]); setCurrentUser(newUser); setAuthForm({ email: '', password: '', name: '' });
         }
+      };
+
+      const updateOrderStatus = (orderId, nextStatus) => {
+        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+      };
+
+      const handleAddMenu = (e) => {
+        e.preventDefault();
+        if (!newMenu.name || !newMenu.price) return;
+        const item = {
+          id: Date.now(),
+          name: newMenu.name,
+          price: parseFloat(newMenu.price),
+          category: newMenu.category,
+          image: newMenu.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=80'
+        };
+        setMenuItems([...menuItems, item]);
+        setNewMenu({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
+      };
+
+      const handleDeleteMenu = (id) => {
+        setMenuItems(prev => prev.filter(item => item.id !== id));
       };
 
       const getStatusBadge = (status) => {
@@ -292,9 +314,87 @@
                   <div className="mt-4 text-center text-xs text-slate-500">Demo: admin@restaurant.com / password123</div>
                 </div>
               ) : (
-                <div className="bg-white rounded-3xl p-6 shadow-sm border">
-                  <h1 className="text-2xl font-black mb-2">ยินดีต้อนรับ, {currentUser.name}</h1>
-                  <button onClick={() => setCurrentUser(null)} className="px-4 py-2 bg-slate-100 text-red-600 rounded-xl text-xs font-bold">ออกจากระบบ</button>
+                <div className="bg-white rounded-3xl p-6 shadow-sm border space-y-6">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h1 className="text-2xl font-black">ยินดีต้อนรับ, {currentUser.name}</h1>
+                      <p className="text-xs text-slate-500">{currentUser.email}</p>
+                    </div>
+                    <button onClick={() => setCurrentUser(null)} className="px-4 py-2 bg-slate-100 text-red-600 rounded-xl text-xs font-bold">ออกจากระบบ</button>
+                  </div>
+
+                  {/* Admin Sub-tabs */}
+                  <div className="flex gap-2 border-b pb-3">
+                    <button onClick={() => setAdminTab('orders')} className={`px-4 py-2 rounded-xl text-xs font-bold ${adminTab === 'orders' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>จัดการออเดอร์ ({orders.length})</button>
+                    <button onClick={() => setAdminTab('menu')} className={`px-4 py-2 rounded-xl text-xs font-bold ${adminTab === 'menu' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>จัดการเมนูอาหาร ({menuItems.length})</button>
+                  </div>
+
+                  {adminTab === 'orders' ? (
+                    <div className="space-y-4">
+                      <h3 className="font-bold text-slate-700">รายการออเดอร์ทั้งหมด</h3>
+                      {orders.map(order => (
+                        <div key={order.id} className="border p-4 rounded-2xl bg-slate-50 flex flex-col sm:flex-row justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-extrabold text-lg text-orange-600">คิว #{order.id}</span>
+                              <span className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-bold">โต๊ะ {order.table}</span>
+                              {getStatusBadge(order.status)}
+                            </div>
+                            <p className="text-xs text-slate-500 mb-2">เวลา: {order.timestamp} {order.note && `| หมายเหตุ: ${order.note}`}</p>
+                            <ul className="text-xs space-y-1">
+                              {order.items.map((it, idx) => (
+                                <li key={idx}>- {it.name} (x{it.quantity}) ฿{it.price * it.quantity}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="flex flex-col gap-2 justify-center">
+                            <span className="text-base font-black text-right">฿{order.total}</span>
+                            <div className="flex gap-1">
+                              {order.status === 'PENDING' && (
+                                <button onClick={() => updateOrderStatus(order.id, 'COOKING')} className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold">รับทำอาหาร</button>
+                              )}
+                              {order.status === 'COOKING' && (
+                                <button onClick={() => updateOrderStatus(order.id, 'READY')} className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold">ทำเสร็จแล้ว</button>
+                              )}
+                              {order.status === 'READY' && (
+                                <button onClick={() => updateOrderStatus(order.id, 'PAID')} className="bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold">ชำระเงินแล้ว</button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <form onSubmit={handleAddMenu} className="bg-slate-50 p-4 rounded-2xl border space-y-3">
+                        <h3 className="font-bold text-slate-700 text-sm">➕ เพิ่มเมนูอาหารใหม่</h3>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <input type="text" placeholder="ชื่อเมนู" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
+                          <input type="number" placeholder="ราคา (บาท)" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
+                          <select value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white">
+                            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <input type="text" placeholder="URL รูปภาพ (ถ้ามี)" value={newMenu.image} onChange={e => setNewMenu({...newMenu, image: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" />
+                        </div>
+                        <button type="submit" className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold">บันทึกเมนูใหม่</button>
+                      </form>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {menuItems.map(item => (
+                          <div key={item.id} className="border p-3 rounded-xl flex justify-between items-center bg-white">
+                            <div className="flex items-center gap-3">
+                              <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg" />
+                              <div>
+                                <h4 className="font-bold text-xs">{item.name}</h4>
+                                <p className="text-xs text-orange-600 font-bold">฿{item.price}</p>
+                              </div>
+                            </div>
+                            <button onClick={() => handleDeleteMenu(item.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
