@@ -19,7 +19,7 @@
 <body>
 
     <h1>📋 เมนูอาหารทั้งหมด</h1>
-    <div id="menu-container">กำลังโหลดเมนู...</div>
+    <div id="menu-container">กำลังโหลดเมนูจากฐานข้อมูล...</div>
 
     <script>
         async function loadMenu() {
@@ -75,7 +75,7 @@
         }
 
         function orderItem(name, price) {
-            alert(`คุณเลือก: ${name} (${price} บาท)\n(ระบบสั่งซื้อกำลังพัฒนาต่อครับ!)`);
+            alert(`คุณเลือก: ${name} (${price} บาท)`);
         }
 
         loadMenu();
