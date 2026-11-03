@@ -100,8 +100,11 @@
       const [authForm, setAuthForm] = useState({ email: '', password: '', name: '' });
       const [authError, setAuthError] = useState('');
 
-      const [adminTab, setAdminTab] = useState('orders'); // 'orders' | 'menu'
-      const [newMenu, setNewMenu] = useState({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
+      const [adminTab, setAdminTab] = useState('orders');
+      
+      // เพิ่ม State สำหรับจัดการฟอร์ม (รองรับทั้งเพิ่มใหม่ และแก้ไข)
+      const [editingId, setEditingId] = useState(null);
+      const [menuForm, setMenuForm] = useState({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
 
       useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -165,22 +168,57 @@
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
       };
 
-      const handleAddMenu = (e) => {
+      // บันทึกเมนู (แยกเคสระหว่าง เพิ่มใหม่ กับ แก้ไขเมนูเดิม)
+      const handleSaveMenu = (e) => {
         e.preventDefault();
-        if (!newMenu.name || !newMenu.price) return;
-        const item = {
-          id: Date.now(),
-          name: newMenu.name,
-          price: parseFloat(newMenu.price),
-          category: newMenu.category,
-          image: newMenu.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=80'
-        };
-        setMenuItems([...menuItems, item]);
-        setNewMenu({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
+        if (!menuForm.name || !menuForm.price) return;
+
+        if (editingId !== null) {
+          // โหมดแก้ไขเมนูเดิม
+          setMenuItems(prev => prev.map(item => item.id === editingId ? {
+            ...item,
+            name: menuForm.name,
+            price: parseFloat(menuForm.price),
+            category: menuForm.category,
+            image: menuForm.image || item.image
+          } : item));
+          setEditingId(null);
+        } else {
+          // โหมดเพิ่มเมนูใหม่
+          const newItem = {
+            id: Date.now(),
+            name: menuForm.name,
+            price: parseFloat(menuForm.price),
+            category: menuForm.category,
+            image: menuForm.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=80'
+          };
+          setMenuItems([...menuItems, newItem]);
+        }
+        // เคลียร์ฟอร์ม
+        setMenuForm({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' });
+      };
+
+      // กดปุ่มแก้ไข ดึงข้อมูลขึ้นมาใส่ฟอร์มด้านบน
+      const handleEditClick = (item) => {
+        setEditingId(item.id);
+        setMenuForm({
+          name: item.name,
+          price: item.price,
+          category: item.category,
+          image: item.image
+        });
+        window.scrollTo({ top: 0, behavior: 'smooth' }); // เลื่อนจอขึ้นไปดูฟอร์ม
       };
 
       const handleDeleteMenu = (id) => {
         setMenuItems(prev => prev.filter(item => item.id !== id));
+      };
+
+      // ฟังก์ชันรีเซ็ตเมนูตั้งต้น (กรณีเผลอลบหายหมด)
+      const handleResetMenu = () => {
+        if (confirm('คุณต้องการรีเซ็ตเมนูทั้งหมดกลับเป็นค่าเริ่มต้นใช่หรือไม่?')) {
+          setMenuItems(INITIAL_MENU);
+        }
       };
 
       const getStatusBadge = (status) => {
@@ -366,30 +404,65 @@
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      <form onSubmit={handleAddMenu} className="bg-slate-50 p-4 rounded-2xl border space-y-3">
-                        <h3 className="font-bold text-slate-700 text-sm">➕ เพิ่มเมนูอาหารใหม่</h3>
+                      {/* ฟอร์มเพิ่ม / แก้ไขเมนูอาหาร */}
+                      <form onSubmit={handleSaveMenu} className={`p-4 rounded-2xl border space-y-3 transition-colors ${editingId ? 'bg-amber-50 border-amber-300' : 'bg-slate-50'}`}>
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-bold text-slate-700 text-sm">
+                            {editingId ? '✏️ แก้ไขข้อมูลเมนูอาหาร' : '➕ เพิ่มเมนูอาหารใหม่'}
+                          </h3>
+                          {editingId && (
+                            <button 
+                              type="button" 
+                              onClick={() => { setEditingId(null); setMenuForm({ name: '', price: '', category: INITIAL_CATEGORIES[0], image: '' }); }}
+                              className="text-xs text-red-500 font-bold hover:underline"
+                            >
+                              ยกเลิกการแก้ไข
+                            </button>
+                          )}
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          <input type="text" placeholder="ชื่อเมนู" value={newMenu.name} onChange={e => setNewMenu({...newMenu, name: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
-                          <input type="number" placeholder="ราคา (บาท)" value={newMenu.price} onChange={e => setNewMenu({...newMenu, price: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
-                          <select value={newMenu.category} onChange={e => setNewMenu({...newMenu, category: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white">
+                          <input type="text" placeholder="ชื่อเมนู" value={menuForm.name} onChange={e => setMenuForm({...menuForm, name: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
+                          <input type="number" placeholder="ราคา (บาท)" value={menuForm.price} onChange={e => setMenuForm({...menuForm, price: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" required />
+                          <select value={menuForm.category} onChange={e => setMenuForm({...menuForm, category: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white">
                             {categories.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
-                          <input type="text" placeholder="URL รูปภาพ (ถ้ามี)" value={newMenu.image} onChange={e => setNewMenu({...newMenu, image: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" />
+                          <input type="text" placeholder="URL รูปภาพ (ถ้ามี)" value={menuForm.image} onChange={e => setMenuForm({...menuForm, image: e.target.value})} className="p-2.5 border rounded-xl text-xs bg-white" />
                         </div>
-                        <button type="submit" className="bg-orange-500 text-white px-4 py-2 rounded-xl text-xs font-bold">บันทึกเมนูใหม่</button>
+                        <button type="submit" className={`px-4 py-2 rounded-xl text-xs font-bold text-white ${editingId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-orange-500 hover:bg-orange-600'}`}>
+                          {editingId ? 'บันทึกการแก้ไข' : 'บันทึกเมนูใหม่'}
+                        </button>
                       </form>
+
+                      {/* ปุ่มรีเซ็ตเมนูเริ่มต้น และรายชื่อเมนู */}
+                      <div className="flex justify-between items-center pt-2">
+                        <h3 className="font-bold text-slate-700 text-sm">รายการเมนูทั้งหมดในระบบ</h3>
+                        <button 
+                          onClick={handleResetMenu}
+                          className="flex items-center gap-1 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-xl font-bold transition-all"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" /> รีเซ็ตเมนูตั้งต้น
+                        </button>
+                      </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {menuItems.map(item => (
-                          <div key={item.id} className="border p-3 rounded-xl flex justify-between items-center bg-white">
+                          <div key={item.id} className="border p-3 rounded-xl flex justify-between items-center bg-white shadow-sm">
                             <div className="flex items-center gap-3">
-                              <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg" />
+                              <img src={item.image} alt={item.name} className="w-12 h-12 object-cover rounded-lg bg-slate-100" />
                               <div>
-                                <h4 className="font-bold text-xs">{item.name}</h4>
+                                <span className="text-[9px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full">{item.category}</span>
+                                <h4 className="font-bold text-xs mt-0.5">{item.name}</h4>
                                 <p className="text-xs text-orange-600 font-bold">฿{item.price}</p>
                               </div>
                             </div>
-                            <button onClick={() => handleDeleteMenu(item.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 className="w-4 h-4" /></button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => handleEditClick(item)} className="text-blue-500 hover:bg-blue-50 p-2 rounded-lg transition-colors" title="แก้ไข">
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteMenu(item.id)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors" title="ลบ">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
