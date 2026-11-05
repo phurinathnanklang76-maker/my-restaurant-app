@@ -75,18 +75,26 @@
       { id: 28, name: "เซตสุดคุ้ม (เนื้อ +5 บาท)", price: 114, category: "สุดคุ้ม", image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=500&q=80" }
     ];
 
+    const STORAGE_KEY = 'aroi_homemade_v2';
+    const readSaved = () => {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+      catch { return {}; }
+    };
+    const money = n => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const initialSaved = readSaved();
+
     function App() {
       const [currentView, setCurrentView] = useState('customer');
-      const [menuItems, setMenuItems] = useState(INITIAL_MENU);
+      const [menuItems, setMenuItems] = useState(() => initialSaved.menuItems || INITIAL_MENU);
       const [categories, setCategories] = useState(INITIAL_CATEGORIES);
-      const [orders, setOrders] = useState([
-        {
-          id: "A001", table: "1",
-          items: [{ id: 1, name: "เนื้อโคขุนแท้", price: 69, quantity: 1 }, { id: 23, name: "เฟรนฟราย", price: 35, quantity: 1 }],
-          total: 104, status: "COOKING", timestamp: "12:00", note: "ไม่ใส่ผัก"
-        }
-      ]);
-      const [queueCounter, setQueueCounter] = useState(2);
+      const [orders, setOrders] = useState(() => initialSaved.orders || []);
+      const [queueCounter, setQueueCounter] = useState(() => initialSaved.queueCounter || 1);
+      const [shiftHistory, setShiftHistory] = useState(() => initialSaved.shiftHistory || []);
+      const [paymentOrderId, setPaymentOrderId] = useState(null);
+      const [paymentMethod, setPaymentMethod] = useState('CASH');
+      const [cashReceived, setCashReceived] = useState('');
+      const [showCompleted, setShowCompleted] = useState(false);
+      const [shiftSummary, setShiftSummary] = useState(null);
       const [selectedTable, setSelectedTable] = useState('1');
       const [cart, setCart] = useState([]);
       const [selectedCategory, setSelectedCategory] = useState('ทั้งหมด');
@@ -111,6 +119,104 @@
         const table = urlParams.get('table');
         if (table) setSelectedTable(table);
       }, []);
+
+      useEffect(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ menuItems, orders, queueCounter, shiftHistory }));
+      }, [menuItems, orders, queueCounter, shiftHistory]);
+
+      // ซิงก์เฉพาะแท็บในเบราว์เซอร์เดียวกัน (ไม่ใช่ฐานข้อมูลข้ามเครื่อง)
+      useEffect(() => {
+        const sync = event => {
+          if (event.key !== STORAGE_KEY || !event.newValue) return;
+          try {
+            const data = JSON.parse(event.newValue);
+            setMenuItems(data.menuItems || INITIAL_MENU);
+            setOrders(data.orders || []);
+            setQueueCounter(data.queueCounter || 1);
+            setShiftHistory(data.shiftHistory || []);
+          } catch {}
+        };
+        window.addEventListener('storage', sync);
+        return () => window.removeEventListener('storage', sync);
+      }, []);
+
+      const printReceipt = order => {
+        const safe = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+        const rows = order.items.map(i => `<tr><td>${safe(i.name)} × ${i.quantity}</td><td style="text-align:right">${money(i.price * i.quantity)}</td></tr>`).join('');
+        const receipt = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8"><title>ใบเสร็จ ${safe(order.id)}</title>
+          <style>body{font-family:Arial,sans-serif;width:72mm;margin:8mm auto;color:#111;font-size:12px}
+          h2{text-align:center;margin:0 0 5px}p{text-align:center;margin:4px}table{width:100%;border-collapse:collapse}
+          td{padding:5px 0;border-bottom:1px dashed #ccc} .total{font-size:17px;font-weight:bold;text-align:right;margin-top:12px}
+          @media print{@page{size:80mm auto;margin:4mm}body{width:auto;margin:0}}</style></head><body>
+          <h2>ร้านอร่อยโฮมเมด</h2><p>ใบเสร็จรับเงิน / บิลสั้น</p>
+          <p>คิว ${safe(order.id)} | โต๊ะ ${safe(order.table)}</p>
+          <p>${safe(order.createdAt ? new Date(order.createdAt).toLocaleString('th-TH') : order.timestamp)}</p>
+          <hr><table>${rows}</table><div class="total">รวม ฿${money(order.total)}</div>
+          <p>ชำระ: ${order.paymentMethod === 'TRANSFER' ? 'โอนเงิน' : order.paymentMethod === 'CASH' ? 'เงินสด' : 'ยังไม่ชำระ'}</p>
+          ${order.paidAt ? `<p>ชำระเมื่อ ${safe(new Date(order.paidAt).toLocaleString('th-TH'))}</p>` : ''}
+          <p>ขอบคุณที่อุดหนุน</p></body></html>`;
+        const win = window.open('', '_blank', 'width=420,height=650');
+        if (!win) { alert('กรุณาอนุญาตหน้าต่าง Pop-up เพื่อพิมพ์ใบเสร็จ'); return; }
+        win.document.open();
+        win.document.write(receipt);
+        win.document.close();
+        win.focus();
+        win.print();
+      };
+
+      const confirmPayment = () => {
+        const order = orders.find(o => o.uid === paymentOrderId);
+        if (!order || order.status !== 'READY') return;
+        if (paymentMethod === 'CASH' && Number(cashReceived) < order.total) {
+          alert('จำนวนเงินที่รับต้องไม่น้อยกว่ายอดชำระ'); return;
+        }
+        setOrders(prev => prev.map(o => o.uid === paymentOrderId ? {
+          ...o, status: 'PAID', paymentMethod, paidAt: new Date().toISOString(),
+          cashReceived: paymentMethod === 'CASH' ? Number(cashReceived) : null
+        } : o));
+        setPaymentOrderId(null);
+        setCashReceived('');
+      };
+
+      const resetQueue = () => {
+        if (orders.some(o => o.status !== 'PAID')) {
+          alert('ยังมีออเดอร์ที่ไม่เสร็จหรือยังไม่ชำระเงิน กรุณาจัดการให้ครบก่อนเริ่มคิวใหม่'); return;
+        }
+        if (!window.confirm('คุณต้องการรีเซ็ตลำดับคิวกลับไปเริ่มต้นที่คิว 1 หรือไม่?\\nออเดอร์ที่ชำระแล้วจะยังอยู่ในประวัติกะนี้')) return;
+        setQueueCounter(1);
+        setMyOrderQueue(null);
+      };
+
+      const closeShift = () => {
+        if (orders.some(o => o.status !== 'PAID')) {
+          alert('ไม่สามารถปิดกะได้ เนื่องจากยังมีออเดอร์ที่ยังไม่ชำระเงิน'); return;
+        }
+        const paid = orders.filter(o => o.status === 'PAID');
+        const summary = {
+          id: Date.now(), closedAt: new Date().toISOString(),
+          count: paid.length,
+          cash: paid.filter(o => o.paymentMethod === 'CASH').reduce((s, o) => s + o.total, 0),
+          transfer: paid.filter(o => o.paymentMethod === 'TRANSFER').reduce((s, o) => s + o.total, 0),
+          total: paid.reduce((s, o) => s + o.total, 0),
+          orders: paid
+        };
+        if (!window.confirm(`ปิดกะและเริ่มวันใหม่?\\nยอดขาย ${money(summary.total)} บาท (${summary.count} ออเดอร์)\\nระบบจะเก็บสรุปกะนี้ไว้ในเบราว์เซอร์และล้างออเดอร์ปัจจุบัน`)) return;
+        setShiftHistory(prev => [summary, ...prev]);
+        setShiftSummary(summary);
+        setOrders([]);
+        setQueueCounter(1);
+        setMyOrderQueue(null);
+        setShowCompleted(false);
+      };
+
+      const activeOrders = orders.filter(o => o.status !== 'PAID').sort((a,b) => (a.createdAt || '').localeCompare(b.createdAt || '') || (a.sequence || 0) - (b.sequence || 0));
+      const completedOrders = orders.filter(o => o.status === 'PAID').slice().reverse();
+      const paidOrders = orders.filter(o => o.status === 'PAID');
+      const salesTotal = paidOrders.reduce((s,o) => s + o.total, 0);
+      const cashTotal = paidOrders.filter(o => o.paymentMethod === 'CASH').reduce((s,o) => s + o.total, 0);
+      const transferTotal = paidOrders.filter(o => o.paymentMethod === 'TRANSFER').reduce((s,o) => s + o.total, 0);
 
       const addToCart = (item) => {
         setCart(prev => {
@@ -138,11 +244,13 @@
         if (cart.length === 0) return;
         const queueNo = `A${String(queueCounter).padStart(3, '0')}`;
         const newOrder = {
-          id: queueNo, table: selectedTable, items: [...cart], total: cartTotal,
-          status: "PENDING", timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), note: orderNote
+          id: queueNo, uid: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          sequence: queueCounter, createdAt: new Date().toISOString(),
+          table: selectedTable, items: cart.map(i => ({ id: i.id, name: i.name, price: i.price, quantity: i.quantity })),
+          total: cartTotal, status: "PENDING", timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), note: orderNote
         };
         setOrders(prev => [newOrder, ...prev]);
-        setMyOrderQueue(queueNo);
+        setMyOrderQueue(newOrder.uid);
         setQueueCounter(prev => prev + 1);
         setCart([]);
         setOrderNote('');
@@ -165,7 +273,7 @@
       };
 
       const updateOrderStatus = (orderId, nextStatus) => {
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: nextStatus } : o));
+        setOrders(prev => prev.map(o => o.uid === orderId ? { ...o, status: nextStatus } : o));
       };
 
       // บันทึกเมนู (แยกเคสระหว่าง เพิ่มใหม่ กับ แก้ไขเมนูเดิม)
@@ -231,7 +339,7 @@
         }
       };
 
-      const myOrder = orders.find(o => o.id === myOrderQueue);
+      const myOrder = orders.find(o => o.uid === myOrderQueue);
 
       return (
         <div>
@@ -247,6 +355,39 @@
             </div>
           </div>
 
+          {paymentOrderId && (() => {
+            const order = orders.find(o => o.uid === paymentOrderId);
+            if (!order) return null;
+            return <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
+              <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-4 shadow-2xl">
+                <h2 className="text-xl font-black">รับชำระเงิน · คิว {order.id}</h2>
+                <p className="text-3xl font-black text-orange-600">฿{money(order.total)}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => setPaymentMethod('CASH')} className={`p-3 rounded-xl border font-bold ${paymentMethod === 'CASH' ? 'bg-orange-500 text-white' : ''}`}>💵 เงินสด</button>
+                  <button onClick={() => setPaymentMethod('TRANSFER')} className={`p-3 rounded-xl border font-bold ${paymentMethod === 'TRANSFER' ? 'bg-orange-500 text-white' : ''}`}>📱 โอนเงิน</button>
+                </div>
+                {paymentMethod === 'CASH' ? <div>
+                  <label className="text-sm font-bold">รับเงินมา (บาท)</label>
+                  <input type="number" min="0" step="0.01" value={cashReceived} onChange={e => setCashReceived(e.target.value)} className="border rounded-xl p-3 w-full mt-1" placeholder="จำนวนเงินที่รับ" />
+                  <p className="text-sm mt-2">เงินทอน: ฿{money(Math.max(0, Number(cashReceived) - order.total))}</p>
+                </div> : <p className="text-sm text-slate-600">กรุณาตรวจสอบยอดเงินโอนเข้าบัญชีร้านจริงก่อนกดยืนยัน (ระบบนี้ไม่ตรวจสอบสลิปอัตโนมัติ)</p>}
+                <div className="flex gap-2">
+                  <button onClick={() => setPaymentOrderId(null)} className="flex-1 p-3 rounded-xl bg-slate-100 font-bold">ยกเลิก</button>
+                  <button onClick={confirmPayment} className="flex-1 p-3 rounded-xl bg-green-600 text-white font-bold">ยืนยันรับเงิน</button>
+                </div>
+              </div>
+            </div>;
+          })()}
+          {shiftSummary && <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 space-y-3">
+              <h2 className="text-xl font-black">สรุปยอดปิดกะ</h2>
+              <p>จำนวนออเดอร์: {shiftSummary.count}</p>
+              <p>เงินสด: ฿{money(shiftSummary.cash)}</p>
+              <p>เงินโอน: ฿{money(shiftSummary.transfer)}</p>
+              <p className="font-black text-xl">ยอดรวม: ฿{money(shiftSummary.total)}</p>
+              <button onClick={() => setShiftSummary(null)} className="w-full p-3 rounded-xl bg-orange-500 text-white font-bold">ปิดสรุป</button>
+            </div>
+          </div>}
           {currentView === 'customer' ? (
             <div className="max-w-md mx-auto bg-white min-h-screen shadow-xl relative pb-24">
               <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white p-5 rounded-b-3xl shadow-lg">
@@ -363,44 +504,64 @@
 
                   {/* Admin Sub-tabs */}
                   <div className="flex gap-2 border-b pb-3">
-                    <button onClick={() => setAdminTab('orders')} className={`px-4 py-2 rounded-xl text-xs font-bold ${adminTab === 'orders' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>จัดการออเดอร์ ({orders.length})</button>
+                    <button onClick={() => setAdminTab('orders')} className={`px-4 py-2 rounded-xl text-xs font-bold ${adminTab === 'orders' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>จัดการออเดอร์ ({activeOrders.length})</button>
                     <button onClick={() => setAdminTab('menu')} className={`px-4 py-2 rounded-xl text-xs font-bold ${adminTab === 'menu' ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>จัดการเมนูอาหาร ({menuItems.length})</button>
                   </div>
 
                   {adminTab === 'orders' ? (
-                    <div className="space-y-4">
-                      <h3 className="font-bold text-slate-700">รายการออเดอร์ทั้งหมด</h3>
-                      {orders.map(order => (
-                        <div key={order.id} className="border p-4 rounded-2xl bg-slate-50 flex flex-col sm:flex-row justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2 mb-1">
+                    <div className="space-y-5">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {[
+                          ['ยอดขายกะนี้', salesTotal],
+                          ['เงินสด', cashTotal],
+                          ['เงินโอน', transferTotal],
+                          ['ชำระแล้ว (รายการ)', paidOrders.length]
+                        ].map(([label, value], idx) => (
+                          <div key={label} className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+                            <p className="text-xs text-slate-500">{label}</p>
+                            <p className="text-lg font-black text-orange-700">{idx === 3 ? value : '฿' + money(value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={resetQueue} className="bg-amber-100 text-amber-900 px-4 py-2 rounded-xl text-xs font-bold">↻ เริ่มคิวใหม่</button>
+                        <button onClick={closeShift} className="bg-slate-900 text-white px-4 py-2 rounded-xl text-xs font-bold">ปิดกะ เริ่มวันใหม่</button>
+                        <button onClick={() => setShowCompleted(v => !v)} className="bg-slate-100 px-4 py-2 rounded-xl text-xs font-bold">
+                          {showCompleted ? 'ซ่อนรายการชำระแล้ว' : `ดูรายการชำระแล้ว (${completedOrders.length})`}
+                        </button>
+                      </div>
+                      <h3 className="font-bold text-slate-700">คิวที่กำลังดำเนินการ ({activeOrders.length})</h3>
+                      {activeOrders.length === 0 && <div className="p-8 text-center bg-slate-50 rounded-2xl text-slate-500">ไม่มีออเดอร์ค้างในขณะนี้</div>}
+                      {(showCompleted ? [...activeOrders, ...completedOrders] : activeOrders).map(order => (
+                        <div key={order.uid} className="border p-4 rounded-2xl bg-slate-50 flex flex-col sm:flex-row justify-between gap-4">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
                               <span className="font-extrabold text-lg text-orange-600">คิว #{order.id}</span>
                               <span className="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-bold">โต๊ะ {order.table}</span>
                               {getStatusBadge(order.status)}
                             </div>
                             <p className="text-xs text-slate-500 mb-2">เวลา: {order.timestamp} {order.note && `| หมายเหตุ: ${order.note}`}</p>
                             <ul className="text-xs space-y-1">
-                              {order.items.map((it, idx) => (
-                                <li key={idx}>- {it.name} (x{it.quantity}) ฿{it.price * it.quantity}</li>
-                              ))}
+                              {order.items.map((it, idx) => <li key={idx}>- {it.name} (x{it.quantity}) ฿{money(it.price * it.quantity)}</li>)}
                             </ul>
+                            {order.status === 'PAID' && <p className="text-xs text-green-700 font-bold mt-2">ชำระโดย {order.paymentMethod === 'TRANSFER' ? 'โอนเงิน' : 'เงินสด'}</p>}
                           </div>
-                          <div className="flex flex-col gap-2 justify-center">
-                            <span className="text-base font-black text-right">฿{order.total}</span>
-                            <div className="flex gap-1">
-                              {order.status === 'PENDING' && (
-                                <button onClick={() => updateOrderStatus(order.id, 'COOKING')} className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold">รับทำอาหาร</button>
-                              )}
-                              {order.status === 'COOKING' && (
-                                <button onClick={() => updateOrderStatus(order.id, 'READY')} className="bg-green-500 text-white text-xs px-3 py-1.5 rounded-lg font-bold">ทำเสร็จแล้ว</button>
-                              )}
-                              {order.status === 'READY' && (
-                                <button onClick={() => updateOrderStatus(order.id, 'PAID')} className="bg-slate-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold">ชำระเงินแล้ว</button>
-                              )}
-                            </div>
+                          <div className="flex flex-col gap-2 justify-center sm:items-end">
+                            <span className="text-base font-black">฿{money(order.total)}</span>
+                            {order.status === 'PENDING' && <button onClick={() => updateOrderStatus(order.uid, 'COOKING')} className="bg-orange-500 text-white text-xs px-3 py-2 rounded-lg font-bold">รับทำอาหาร</button>}
+                            {order.status === 'COOKING' && <button onClick={() => updateOrderStatus(order.uid, 'READY')} className="bg-green-600 text-white text-xs px-3 py-2 rounded-lg font-bold">ทำเสร็จแล้ว</button>}
+                            {order.status === 'READY' && <button onClick={() => { setPaymentOrderId(order.uid); setPaymentMethod('CASH'); setCashReceived(''); }} className="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg font-bold">รับชำระเงิน</button>}
+                            <button onClick={() => printReceipt(order)} className="bg-white border text-slate-700 text-xs px-3 py-2 rounded-lg font-bold">🖨 พิมพ์บิล</button>
                           </div>
                         </div>
                       ))}
+                      {shiftHistory.length > 0 && <div className="border-t pt-4">
+                        <h3 className="font-bold mb-2">ประวัติสรุปกะ ({shiftHistory.length})</h3>
+                        {shiftHistory.slice(0, 10).map(h => <div key={h.id} className="flex justify-between text-xs py-2 border-b">
+                          <span>{new Date(h.closedAt).toLocaleString('th-TH')} · {h.count} รายการ</span>
+                          <span className="font-bold">฿{money(h.total)}</span>
+                        </div>)}
+                      </div>}
                     </div>
                   ) : (
                     <div className="space-y-6">
